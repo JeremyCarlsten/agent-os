@@ -11,6 +11,7 @@ OVERWRITE_INSTRUCTIONS=false
 OVERWRITE_STANDARDS=false
 CLAUDE_CODE=false
 CURSOR=false
+VSCODE=false
 PROJECT_TYPE=""
 
 # Parse command line arguments
@@ -36,6 +37,10 @@ while [[ $# -gt 0 ]]; do
             CURSOR=true
             shift
             ;;
+        --vscode|--vs-code)
+            VSCODE=true
+            shift
+            ;;
         --project-type=*)
             PROJECT_TYPE="${1#*=}"
             shift
@@ -49,6 +54,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --overwrite-standards       Overwrite existing standards files"
             echo "  --claude-code               Add Claude Code support"
             echo "  --cursor                    Add Cursor support"
+            echo "  --vscode                    Add VSCode support"
             echo "  --project-type=TYPE         Use specific project type for installation"
             echo "  -h, --help                  Show this help message"
             echo ""
@@ -122,6 +128,27 @@ if [ "$IS_FROM_BASE" = true ]; then
         fi
     fi
 
+    if [ "$VSCODE" = false ]; then
+        # Check if vscode is enabled in base config
+        if grep -q "vscode:" "$BASE_AGENT_OS/config.yml" && \
+           grep -A1 "vscode:" "$BASE_AGENT_OS/config.yml" | grep -q "enabled: true"; then
+            VSCODE=true
+            echo "  ✓ Auto-enabling VSCode support (from Agent OS config)"
+        fi
+    fi
+
+    # Auto-detect VSCode environment if .vscode directory exists
+    if [ "$VSCODE" = false ] && [ -d ".vscode" ]; then
+        VSCODE=true
+        echo "  ✓ Auto-detected VSCode environment (.vscode directory found)"
+    fi
+
+    # Auto-detect VSCode environment if .code-workspace file exists
+    if [ "$VSCODE" = false ] && ls *.code-workspace 1> /dev/null 2>&1; then
+        VSCODE=true
+        echo "  ✓ Auto-detected VSCode workspace (*.code-workspace file found)"
+    fi
+
     # Read project type from config or use flag
     if [ -z "$PROJECT_TYPE" ] && [ -f "$BASE_AGENT_OS/config.yml" ]; then
         # Try to read default_project_type from config
@@ -177,6 +204,19 @@ if [ "$IS_FROM_BASE" = true ]; then
     copy_directory "$STANDARDS_SOURCE" "$INSTALL_DIR/standards" "$OVERWRITE_STANDARDS"
 else
     # Running directly from GitHub - download from GitHub
+    
+    # Auto-detect VSCode environment if .vscode directory exists
+    if [ "$VSCODE" = false ] && [ -d ".vscode" ]; then
+        VSCODE=true
+        echo "  ✓ Auto-detected VSCode environment (.vscode directory found)"
+    fi
+
+    # Auto-detect VSCode environment if .code-workspace file exists
+    if [ "$VSCODE" = false ] && ls *.code-workspace 1> /dev/null 2>&1; then
+        VSCODE=true
+        echo "  ✓ Auto-detected VSCode workspace (*.code-workspace file found)"
+    fi
+    
     if [ -z "$PROJECT_TYPE" ]; then
         PROJECT_TYPE="default"
     fi
@@ -268,6 +308,120 @@ if [ "$CURSOR" = true ]; then
     fi
 fi
 
+# Handle VSCode installation for project
+if [ "$VSCODE" = true ]; then
+    echo ""
+    echo "📥 Installing VSCode support..."
+    mkdir -p "./.vscode"
+
+    echo "  📂 VSCode Configuration:"
+
+    # Create settings.json with Agent OS integration
+    cat > ./.vscode/settings.json << EOF
+{
+    "files.exclude": {
+        "**/.agent-os/specs/**/research-findings": true
+    },
+    "search.exclude": {
+        "**/.agent-os/specs/**/research-findings": true
+    },
+    "files.associations": {
+        "*.md": "markdown"
+    }
+}
+EOF
+    echo "  ✓ settings.json"
+
+    # Create tasks.json with Agent OS workflows
+    cat > ./.vscode/tasks.json << EOF
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Agent OS: Plan Product",
+            "type": "shell",
+            "command": "echo",
+            "args": ["Run: @.agent-os/instructions/core/plan-product.md"],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "Agent OS: Create Spec",
+            "type": "shell",
+            "command": "echo",
+            "args": ["Run: @.agent-os/instructions/core/create-spec.md"],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "Agent OS: Create Tasks",
+            "type": "shell",
+            "command": "echo",
+            "args": ["Run: @.agent-os/instructions/core/create-tasks.md"],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "Agent OS: Execute Tasks",
+            "type": "shell",
+            "command": "echo",
+            "args": ["Run: @.agent-os/instructions/core/execute-tasks.md"],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "Agent OS: Analyze Product",
+            "type": "shell",
+            "command": "echo",
+            "args": ["Run: @.agent-os/instructions/core/analyze-product.md"],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            }
+        }
+    ]
+}
+EOF
+    echo "  ✓ tasks.json"
+
+    # Create extensions.json with recommended extensions
+    cat > ./.vscode/extensions.json << EOF
+{
+    "recommendations": [
+        "github.copilot",
+        "github.copilot-chat",
+        "ms-vscode.vscode-json",
+        "yzhang.markdown-all-in-one",
+        "davidanson.vscode-markdownlint"
+    ]
+}
+EOF
+    echo "  ✓ extensions.json"
+fi
+
 # Success message
 echo ""
 echo "✅ Agent OS has been installed in your project ($PROJECT_NAME)!"
@@ -283,6 +437,10 @@ fi
 
 if [ "$CURSOR" = true ]; then
     echo "   .cursor/rules/             - Cursor command rules"
+fi
+
+if [ "$VSCODE" = true ]; then
+    echo "   .vscode/                   - VSCode configuration files"
 fi
 
 echo ""
@@ -306,6 +464,16 @@ if [ "$CURSOR" = true ]; then
     echo "  @analyze-product - Set up the mission and roadmap for an existing product"
     echo "  @create-spec     - Create a spec for a new feature"
     echo "  @execute-tasks   - Build and ship code for a new feature"
+    echo ""
+fi
+
+if [ "$VSCODE" = true ]; then
+    echo "VSCode usage:"
+    echo "  Use Command Palette (Ctrl+Shift+P) and run 'Tasks: Run Task' to access:"
+    echo "  - Agent OS: Plan Product    - Set the mission & roadmap for a new product"
+    echo "  - Agent OS: Analyze Product - Set up the mission and roadmap for an existing product"
+    echo "  - Agent OS: Create Spec     - Create a spec for a new feature"
+    echo "  - Agent OS: Execute Tasks   - Build and ship code for a new feature"
     echo ""
 fi
 
